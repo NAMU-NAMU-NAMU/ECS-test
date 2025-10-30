@@ -1,0 +1,43 @@
+# Dockerfile
+FROM php:8.2-apache
+
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    zip \
+    unzip \
+    libzip-dev \
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+
+# Composerをインストール
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Apache設定
+RUN a2enmod rewrite
+
+# Apacheの設定ファイルをコピー
+COPY apache-config.conf /etc/apache2/sites-available/000-default.conf
+
+# 作業ディレクトリを設定
+WORKDIR /var/www/html
+
+# Laravelアプリケーションをコピー
+COPY . .
+
+# Composerの依存関係をインストール
+RUN composer install --no-dev --optimize-autoloader
+
+# 権限設定
+RUN chown -R www-data:www-data /var/www/html \
+    && chmod -R 755 /var/www/html/storage \
+    && chmod -R 755 /var/www/html/bootstrap/cache
+
+# ポート80を公開
+EXPOSE 80
+
+# Apacheを起動
+CMD ["apache2-foreground"]
