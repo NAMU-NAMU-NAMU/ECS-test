@@ -1,0 +1,29 @@
+# 環境設定ファイル
+.env
+.env.local
+.env.production
+
+# ログファイル
+*.log
+logs/
+
+# 依存関係
+node_modules/
+vendor/
+
+# キャッシュ
+.cache/
+*.tmp
+
+# OS固有ファイル
+.DS_Store
+Thumbs.db
+
+# IDE設定
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.dockerignore
