@@ -50,4 +50,3 @@ phases:
       - cat imagedefinitions.json
       - echo "=== Final directory listing ==="
       - ls -la
-artifacts:
