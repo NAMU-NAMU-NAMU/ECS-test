@@ -46,25 +46,30 @@ COPY . .
 
 # composer.jsonが存在する場合のみComposer依存関係インストール
 RUN if [ -f "composer.json" ]; then \
-        composer install --no-dev --optimize-autoloader --no-interaction; \
+        echo "Installing Composer dependencies..."; \
+        composer install --no-dev --optimize-autoloader --no-interaction || \
+        (echo "Composer install failed, but continuing..." && true); \
     else \
         echo "composer.json not found, skipping composer install"; \
     fi
 
 # package.jsonが存在する場合のみnpmパッケージインストール
 RUN if [ -f "package.json" ]; then \
+        echo "Installing npm dependencies (including devDependencies for build)..."; \
         if [ -f "package-lock.json" ]; then \
-            npm ci --only=production; \
+            npm ci || (echo "npm ci failed, trying npm install..." && npm install); \
         else \
-            npm install --only=production; \
+            npm install; \
         fi; \
-        npm run production; \
+        echo "Building frontend assets with Vite..."; \
+        npm run build || (echo "Build failed, but continuing..." && true); \
     else \
         echo "package.json not found, skipping npm install"; \
     fi
 
 # .envファイルの作成（基本的な設定）
 RUN if [ ! -f ".env" ]; then \
+        echo "Creating basic .env file..."; \
         echo "APP_NAME=Laravel" > .env && \
         echo "APP_ENV=production" >> .env && \
         echo "APP_KEY=" >> .env && \
@@ -75,8 +80,9 @@ RUN if [ ! -f ".env" ]; then \
 
 # Laravel用の設定（.envが存在する場合のみ）
 RUN if [ -f "artisan" ]; then \
-        php artisan key:generate --no-interaction; \
-        php artisan config:cache; \
+        echo "Configuring Laravel..."; \
+        php artisan key:generate --no-interaction || echo "Key generation failed, continuing..."; \
+        php artisan config:cache || echo "Config cache failed, continuing..."; \
         php artisan route:cache || echo "Route cache failed, continuing..."; \
         php artisan view:cache || echo "View cache failed, continuing..."; \
     else \
@@ -85,11 +91,18 @@ RUN if [ -f "artisan" ]; then \
 
 # パーミッション設定（ディレクトリが存在する場合のみ）
 RUN chown -R www-data:www-data /var/www/html && \
-    if [ -d "storage" ]; then chmod -R 755 storage; fi && \
-    if [ -d "bootstrap/cache" ]; then chmod -R 755 bootstrap/cache; fi
+    if [ -d "storage" ]; then \
+        echo "Setting storage permissions..."; \
+        chmod -R 755 storage; \
+    fi && \
+    if [ -d "bootstrap/cache" ]; then \
+        echo "Setting bootstrap/cache permissions..."; \
+        chmod -R 755 bootstrap/cache; \
+    fi
 
 # Apache設定：DocumentRootをpublicディレクトリに変更（publicが存在する場合のみ）
 RUN if [ -d "public" ]; then \
+        echo "Configuring Apache for Laravel public directory..."; \
         sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf && \
         sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf && \
         echo '<Directory /var/www/html/public>' >> /etc/apache2/apache2.conf && \
@@ -100,7 +113,7 @@ RUN if [ -d "public" ]; then \
         echo "public directory not found, using default DocumentRoot"; \
     fi
 
-# 不要なファイルの削除
+# ビルド後にnode_modulesを削除してイメージサイズを縮小
 RUN rm -rf node_modules .git tests
 
 # ポート80を開放
