@@ -3,7 +3,8 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      docker: 20
+      # docker: 20 ← この行を削除
+      python: 3.11  # 代わりにこの行を追加（または他の必要なランタイム）
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
