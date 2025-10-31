@@ -7,12 +7,15 @@ phases:
       - aws --version
       - docker --version
       - echo "=== Environment Variables ==="
-      - echo "AWS_DEFAULT_REGION:$AWS_DEFAULT_REGION"
-      - echo "AWS_ACCOUNT_ID:$AWS_ACCOUNT_ID"
-      - echo "IMAGE_REPO_NAME:$IMAGE_REPO_NAME"
+      - echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+      - echo "AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID"
+      - echo "IMAGE_REPO_NAME: $IMAGE_REPO_NAME"
       - echo "=== Current Directory and Files ==="
       - pwd
       - ls -la
+      - echo "=== Checking Dockerfile ==="
+      - ls -la Dockerfile || echo "Dockerfile not found"
+      - cat Dockerfile || echo "Cannot read Dockerfile"
       - echo "=== Checking required files ==="
       - ls -la composer.json || echo "composer.json not found"
       - ls -la package.json || echo "package.json not found"
@@ -22,28 +25,30 @@ phases:
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
-      - echo "Repository URI:$REPOSITORY_URI"
-      - echo "Image Tag:$IMAGE_TAG"
+      - echo "Repository URI: $REPOSITORY_URI"
+      - echo "Image Tag: $IMAGE_TAG"
+
   build:
     commands:
       - echo "=== Build Phase Started ==="
       - echo Build started on `date`
       - echo "=== Docker Build Command ==="
       - echo "docker build -t $IMAGE_REPO_NAME:latest ."
-      - echo "=== Starting Docker Build ==="
-      - docker build -t $IMAGE_REPO_NAME:latest . 2>&1 || (echo "=== Docker Build Failed ===" && docker system df && exit 1)
+      - echo "=== Starting Docker Build with Verbose Output ==="
+      - docker build --progress=plain --no-cache -t $IMAGE_REPO_NAME:latest .
       - echo "=== Docker Build Successful ==="
       - docker tag $IMAGE_REPO_NAME:latest $REPOSITORY_URI:latest
       - docker tag $IMAGE_REPO_NAME:latest $REPOSITORY_URI:$IMAGE_TAG
       - echo "=== Docker Images List ==="
       - docker images | grep $IMAGE_REPO_NAME
+
   post_build:
     commands:
       - echo "=== Post Build Phase Started ==="
       - echo Build completed on `date`
       - echo "=== Pushing Docker Images ==="
-      - docker push $REPOSITORY_URI:latest 2>&1 || (echo "Push latest failed" && exit 1)
-      - docker push $REPOSITORY_URI:$IMAGE_TAG 2>&1 || (echo "Push tagged failed" && exit 1)
+      - docker push $REPOSITORY_URI:latest
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
       - echo "=== Creating imagedefinitions.json ==="
       - printf '[{"name":"%s","imageUri":"%s"}]' $CONTAINER_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
       - echo "=== imagedefinitions.json content ==="
