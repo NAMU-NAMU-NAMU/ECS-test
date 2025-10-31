@@ -41,52 +41,67 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # 作業ディレクトリ設定
 WORKDIR /var/www/html
 
-# まずcomposer.jsonとpackage.jsonをコピー（キャッシュ効率化）
-COPY composer.json composer.lock package.json package-lock.json ./
-
-# Composer依存関係インストール（本番環境用）
-RUN composer install --no-dev --no-scripts --no-autoloader --optimize-autoloader
-
-# npmパッケージインストール
-RUN npm ci --only=production
-
-# アプリケーションコードをコピー
+# アプリケーションコードを先にコピー
 COPY . .
 
-# Composer autoloaderを再生成
-RUN composer dump-autoload --no-dev --optimize
+# composer.jsonが存在する場合のみComposer依存関係インストール
+RUN if [ -f "composer.json" ]; then \
+        composer install --no-dev --optimize-autoloader --no-interaction; \
+    else \
+        echo "composer.json not found, skipping composer install"; \
+    fi
 
-# npmビルドを実行
-RUN npm run production
+# package.jsonが存在する場合のみnpmパッケージインストール
+RUN if [ -f "package.json" ]; then \
+        if [ -f "package-lock.json" ]; then \
+            npm ci --only=production; \
+        else \
+            npm install --only=production; \
+        fi; \
+        npm run production; \
+    else \
+        echo "package.json not found, skipping npm install"; \
+    fi
 
-# 環境ファイルの設定（本番では環境変数を使用推奨）
-RUN cp .env.example .env || echo "APP_ENV=production" > .env
+# .envファイルの作成（基本的な設定）
+RUN if [ ! -f ".env" ]; then \
+        echo "APP_NAME=Laravel" > .env && \
+        echo "APP_ENV=production" >> .env && \
+        echo "APP_KEY=" >> .env && \
+        echo "APP_DEBUG=false" >> .env && \
+        echo "APP_URL=http://localhost" >> .env && \
+        echo "LOG_CHANNEL=stack" >> .env; \
+    fi
 
-# Laravel用の設定とキャッシュクリア
-RUN php artisan key:generate \
-    && php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+# Laravel用の設定（.envが存在する場合のみ）
+RUN if [ -f "artisan" ]; then \
+        php artisan key:generate --no-interaction; \
+        php artisan config:cache; \
+        php artisan route:cache || echo "Route cache failed, continuing..."; \
+        php artisan view:cache || echo "View cache failed, continuing..."; \
+    else \
+        echo "artisan not found, skipping Laravel commands"; \
+    fi
 
-# パーミッション設定
-RUN chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html/storage \
-    && chmod -R 755 /var/www/html/bootstrap/cache
+# パーミッション設定（ディレクトリが存在する場合のみ）
+RUN chown -R www-data:www-data /var/www/html && \
+    if [ -d "storage" ]; then chmod -R 755 storage; fi && \
+    if [ -d "bootstrap/cache" ]; then chmod -R 755 bootstrap/cache; fi
 
-# Apache設定：DocumentRootをpublicディレクトリに変更
-RUN sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf \
-    && sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
-
-# Apache設定の最適化
-RUN echo '<Directory /var/www/html/public>\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>' >> /etc/apache2/apache2.conf
+# Apache設定：DocumentRootをpublicディレクトリに変更（publicが存在する場合のみ）
+RUN if [ -d "public" ]; then \
+        sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf && \
+        sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf && \
+        echo '<Directory /var/www/html/public>' >> /etc/apache2/apache2.conf && \
+        echo '    AllowOverride All' >> /etc/apache2/apache2.conf && \
+        echo '    Require all granted' >> /etc/apache2/apache2.conf && \
+        echo '</Directory>' >> /etc/apache2/apache2.conf; \
+    else \
+        echo "public directory not found, using default DocumentRoot"; \
+    fi
 
 # 不要なファイルの削除
-RUN rm -rf /var/www/html/node_modules \
-    && rm -rf /var/www/html/.git \
-    && rm -rf /var/www/html/tests
+RUN rm -rf node_modules .git tests
 
 # ポート80を開放
 EXPOSE 80
